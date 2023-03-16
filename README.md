@@ -1,2 +1,3 @@
 # blockchain_practice
  
+bitcoinを参考にblockchainを学習しながら実装する
