@@ -4,6 +4,9 @@ import time
 import json
 import hashlib
 
+from ecdsa import NIST256p
+from ecdsa import VerifyingKey
+
 import utils
 
 MINING_DIFFICULTY = 3
@@ -38,15 +41,39 @@ class BlockChain(object):
         return hashlib.sha256(str(block).encode()).hexdigest()
         
     def add_transaction(self, sender_blockchain_address, 
-                        recipient_blockchain_address, value):
+                        recipient_blockchain_address, value,
+                        sender_public_key=None, signature=None):
         transaction = utils.sorted_dict_by_key({
             "sender_blockchain_address": sender_blockchain_address,
             "recipient_blockchain_address": recipient_blockchain_address,
             "value": float(value),
         })
-        self.transaction_pool.append(transaction)
-        return True
-
+        if sender_blockchain_address == MINING_SENDER_ADDRESS:
+            self.transaction_pool.append(transaction)
+            return True
+        
+        if self.verify_transaction_signature(sender_public_key,
+                                             signature,
+                                             transaction):
+            if self.calculate_total_amount(sender_blockchain_address) < float(value):
+                logger.error({"action":"add_transaction", "error":"no_value"})
+                return False
+            
+            self.transaction_pool.append(transaction)
+            return True
+        return False
+            
+    def verify_transaction_signature(
+        self, sender_public_key, signature, transaction):
+        sha256 = hashlib.sha256()
+        sha256.update(str(transaction).encode("utf-8"))
+        message = sha256.digest()
+        signature_bytes = bytes().fromhex(signature)
+        verifying_key = VerifyingKey.from_string(
+            bytes().fromhex(sender_public_key), curve=NIST256p)
+        verified_key = verifying_key.verify(signature_bytes, message)
+        return verified_key
+    
     def find_nonce(self, transactions, previous_hash, 
                    nonce, difficulty=3):
         block = utils.sorted_dict_by_key({
@@ -71,7 +98,7 @@ class BlockChain(object):
             sender_blockchain_address=MINING_SENDER_ADDRESS,
             recipient_blockchain_address=self.blockchain_address,
             value=MINING_REWARD,
-        )
+        )   
         nonce=self.proof_of_work()
         previous_hash=self.generate_hash(self.chain[-1])
         self.create_block(nonce, previous_hash)
@@ -87,31 +114,3 @@ class BlockChain(object):
                 if transaction['recipient_blockchain_address'] == blockchain_address:
                     total_amount += float(transaction["value"])
         return total_amount
-def pprint(chains):
-    for i, chain in enumerate(chains):
-        print("="*25, "Chain ", i, "="*25)
-        for k, v in chain.items():
-            if k == 'transactions':
-                print(k)
-                for d in v:
-                    print("-"*40)
-                    for kk, vv in d.items():
-                        print(kk, vv)
-            else:
-                print(k, v)     
-    print("*"*40)
-        
-if __name__ == "__main__":
-    my_blockchain_address = "9dfvqao303kldaasldfiv0"
-    block_chain = BlockChain(my_blockchain_address)
-    pprint(block_chain.chain)
-    
-    block_chain.add_transaction("A", "B", 1.0)
-    block_chain.mining()
-    pprint(block_chain.chain)
-    
-    block_chain.add_transaction("C", "D", 2.0)
-    block_chain.add_transaction(my_blockchain_address, "Y", 3.0)
-    block_chain.mining()
-    pprint(block_chain.chain)
-    print(block_chain.calculate_total_amount(my_blockchain_address))
